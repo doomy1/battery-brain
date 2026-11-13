@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Battery Brain</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Battery Brain</h1>
+      <p class="tagline">A Kalman filter, a neural network and a model predictive controller running a lithium-ion cell, live in your browser.</p>
+    </div>
+    <span id="status" class="pill">Starting…</span>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="est" role="tab">1 · How full is it?</button>
+    <button class="tab" data-tab="race" role="tab">2 · Fast-charge race</button>
+    <button class="tab" data-tab="about" role="tab">How it works</button>
+  </nav>
+
+  <!-- ===================== Estimation ===================== -->
+  <main id="tab-est" class="panel">
+    <aside class="side">
+      <section class="card">
+        <h2>The cell</h2>
+        <div class="gauge">
+          <div class="gauge-body"><div id="est-fill" class="gauge-fill"></div>
+            <span id="est-true" class="gauge-label">–</span></div>
+          <div class="gauge-cap"></div>
+        </div>
+        <p class="hint">True charge. No real battery can measure this directly, so it has to be estimated.</p>
+        <div class="readouts">
+          <div><span id="est-i">–</span><small>current</small></div>
+          <div><span id="est-v">–</span><small>voltage</small></div>
+          <div><span id="est-t">–</span><small>temperature</small></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Three estimators</h2>
+        <table class="score">
+          <thead><tr><th></th><th>estimate</th><th>error now</th><th>RMS error</th></tr></thead>
+          <tbody>
+            <tr><td><i class="dot c-cc"></i>Coulomb counting</td><td id="s-cc-est">–</td><td id="s-cc-err">–</td><td id="s-cc-rms">–</td></tr>
+            <tr><td><i class="dot c-ekf"></i>Kalman filter</td><td id="s-ekf-est">–</td><td id="s-ekf-err">–</td><td id="s-ekf-rms">–</td></tr>
+            <tr><td><i class="dot c-nn"></i>Kalman + neural net</td><td id="s-nn-est">–</td><td id="s-nn-err">–</td><td id="s-nn-rms">–</td></tr>
+          </tbody>
+        </table>
+        <button id="est-scramble" class="btn primary">Scramble the estimates</button>
+        <p class="hint">Simulates a memory loss: every estimator restarts 30 % wrong. Watch which ones recover.</p>
+      </section>
+
+      <section class="card">
+        <h2>Break things</h2>
+        <label>Load <select id="est-profile">
+          <option value="drive">Stop-and-go driving</option>
+          <option value="home">Home backup</option>
+          <option value="pulse">Lab pulses</option>
+          <option value="manual">Manual (you are the load)</option>
+        </select></label>
+        <label id="manual-row" hidden>Your current <output id="o-manual">0 A</output>
+          <input id="est-manual" type="range" min="-10" max="15" step="0.5" value="0"></label>
+        <label>Ambient temperature <output id="o-ambient">25 °C</output>
+          <input id="est-ambient" type="range" min="-5" max="45" step="1" value="25"></label>
+        <label>Current sensor offset <output id="o-bias">0 mA</output>
+          <input id="est-bias" type="range" min="-300" max="300" step="10" value="0"></label>
+        <label>Voltage sensor noise <output id="o-noise">2 mV</output>
+          <input id="est-noise" type="range" min="0" max="30" step="1" value="2"></label>
+        <label>Cell ageing (capacity lost) <output id="o-fade">0 %</output>
+          <input id="est-fade" type="range" min="0" max="30" step="1" value="0"></label>
+        <div class="row">
+          <label class="grow">Speed <select id="est-speed">
+            <option value="1">1× real time</option>
+            <option value="10">10×</option>
+            <option value="30" selected>30×</option>
+            <option value="100">100×</option>
+          </select></label>
+          <button id="est-pause" class="btn">Pause</button>
+          <button id="est-reset" class="btn">Reset</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="charts">
+      <p class="try"><b>Try this:</b> drag ambient temperature down to 0 °C, or add a current sensor offset. The plain Kalman filter trusts a model that is now wrong; the neural network has learned the difference.</p>
+      <div id="c-soc"></div>
+      <div id="c-err"></div>
+      <div id="c-verr"></div>
+      <div class="pair"><div id="c-cur"></div><div id="c-temp"></div></div>
+    </section>
+  </main>
+
+  <!-- ===================== Race ===================== -->
+  <main id="tab-race" class="panel" hidden>
+    <aside class="side">
+      <section class="card">
+        <h2>Race setup</h2>
+        <label>Ambient temperature <output id="o-r-ambient">25 °C</output>
+          <input id="r-ambient" type="range" min="5" max="40" step="1" value="25"></label>
+        <label>Temperature limit <output id="o-r-tmax">45 °C</output>
+          <input id="r-tmax" type="range" min="38" max="55" step="1" value="45"></label>
+        <label>Maximum current <output id="o-r-imax">15 A (3C)</output>
+          <input id="r-imax" type="range" min="5" max="20" step="1" value="15"></label>
+        <label>Start charge <output id="o-r-soc0">10 %</output>
+          <input id="r-soc0" type="range" min="5" max="50" step="5" value="10"></label>
+        <div class="row">
+          <label class="grow">Speed <select id="r-speed">
+            <option value="10">10×</option>
+            <option value="30" selected>30×</option>
+            <option value="100">100×</option>
+          </select></label>
+          <button id="r-start" class="btn primary">Start race</button>
+        </div>
+        <p class="hint">Both chargers must keep the cell under the voltage limit (4.2 V) and the temperature limit while charging to 80 %.</p>
+      </section>
+
+      <section class="card lane">
+        <h2><i class="dot c-table"></i>Table charger</h2>
+        <p class="hint">The conventional approach: constant current, then constant voltage, cutting current in steps as the cell warms up.</p>
+        <div class="gauge small"><div class="gauge-body"><div id="r-table-fill" class="gauge-fill c-table-bg"></div>
+          <span id="r-table-soc" class="gauge-label">–</span></div><div class="gauge-cap"></div></div>
+        <div class="readouts">
+          <div><span id="r-table-time">–</span><small>time</small></div>
+          <div><span id="r-table-i">–</span><small>current</small></div>
+          <div><span id="r-table-t">–</span><small>temperature</small></div>
+        </div>
+      </section>
+
+      <section class="card lane">
+        <h2><i class="dot c-mpc"></i>Model predictive control</h2>
+        <p class="hint">Predicts the next five minutes of voltage and temperature and solves an optimisation problem every 10 s to ride the limits.</p>
+        <div class="gauge small"><div class="gauge-body"><div id="r-mpc-fill" class="gauge-fill c-mpc-bg"></div>
+          <span id="r-mpc-soc" class="gauge-label">–</span></div><div class="gauge-cap"></div></div>
+        <div class="readouts">
+          <div><span id="r-mpc-time">–</span><small>time</small></div>
+          <div><span id="r-mpc-i">–</span><small>current</small></div>
+          <div><span id="r-mpc-t">–</span><small>temperature</small></div>
+        </div>
+      </section>
+    </aside>
+
+    <section class="charts">
+      <p id="r-banner" class="try"><b>Try this:</b> press Start race. Then raise the ambient temperature and race again: the hotter it gets, the more the predictive controller gains.</p>
+      <div id="c-r-soc"></div>
+      <div id="c-r-cur"></div>
+      <div class="pair"><div id="c-r-volt"></div><div id="c-r-temp"></div></div>
+    </section>
+  </main>
+
+  <!-- ===================== About ===================== -->
+  <main id="tab-about" class="panel about" hidden>
+    <article>
+      <h2>What you are looking at</h2>
+      <p>A simulated 5 Ah lithium-ion cell, and the algorithms a battery management system runs on it. The simulated cell is deliberately more complicated than the model the algorithms were designed with, which is the situation every real battery engineer is in.</p>
+      <h3>1 · State of charge estimation</h3>
+      <p><b>Coulomb counting</b> integrates current. It has no feedback, so a wrong starting point or a sensor offset is never corrected.</p>
+      <p><b>The extended Kalman filter</b> also predicts the cell voltage from a simple circuit model and corrects its estimate whenever the measured voltage disagrees. It recovers from a wrong start, but it inherits every error in its model.</p>
+      <p><b>Kalman + neural network</b> adds a small network, trained on simulated lab data, that predicts the voltage error of the circuit model. The filter stays in charge; the network only improves the model it uses.</p>
+      <h3>2 · Fast charging</h3>
+      <p><b>Model predictive control</b> solves a constrained optimisation every 10 seconds: push as much current as possible while the predicted voltage and temperature stay inside their limits. The optimisation is a quadratic program solved by an interior-point method written from scratch. A Kalman observer estimates unmodelled heating so the controller holds the temperature limit without overshoot.</p>
+      <h3>What runs where</h3>
+      <p>Everything on this page is computed by the project's Python package, running in your browser through WebAssembly. Nothing is pre-recorded and there is no server.</p>
+      <h3>Honest limits</h3>
+      <p>The cell is a simulation, and the network was trained on data from the same simulator, so its accuracy here is an upper bound. On a real cell it would need real test data and would do worse. The ageing slider shows this: the network never saw an aged cell during training.</p>
+    </article>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

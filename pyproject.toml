@@ -1,0 +1,19 @@
+[project]
+name = "batterybrain"
+version = "0.1.0"
+description = "Kalman filtering, learned model correction and MPC fast charging for a lithium-ion cell"
+requires-python = ">=3.10"
+dependencies = ["numpy"]
+
+[project.optional-dependencies]
+dev = ["pytest", "matplotlib"]
+
+[tool.setuptools]
+packages = ["batterybrain"]
+
+[tool.setuptools.package-data]
+batterybrain = ["weights/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
